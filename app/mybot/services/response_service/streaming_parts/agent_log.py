@@ -19,23 +19,14 @@ async def agent_log(
     is_update_progress: bool | None = False,
 ) -> None:
     """Handle agent_log event"""
-
     agent_strategy_name = event_handler.lazy_data.agent_strategy_name
 
     if agent_data := chunk_data.get("data", {}):
         parsed_data = _parse_agent_log_data(agent_data, agent_strategy_name)
-    elif (
-        chunk_data.get("status") == "start"
-        and agent_strategy_name == AgentStrategy.FUNCTION_CALLING
-    ):
-        parsed_data = {"action": "🤔 Thinking..."}
-    else:
-        return agent_strategy_name
-
-    agent_log_text = _format_agent_log(parsed_data)
-
-    if is_update_progress:
-        await event_handler.update_progress_message(agent_log_text)
+        agent_log_text = _format_agent_log(parsed_data)
+        if is_update_progress:
+            await event_handler.update_progress_message(agent_log_text)
+        return
 
 
 def _parse_agent_log_data(

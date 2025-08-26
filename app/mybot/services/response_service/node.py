@@ -69,9 +69,10 @@ async def _process_streaming_chunks(
         elif event == WorkflowEvent.AGENT_LOG:
             is_update_progress = time.time() - last_edit_time > AGENT_LOG_UPDATE_INTERVAL
             await streaming_parts.agent_log(
-                context, event_handler, is_update_progress=is_update_progress
+                chunk_data, event_handler, is_update_progress=is_update_progress
             )
-            last_edit_time = time.time()
+            if is_update_progress:
+                last_edit_time = time.time()
 
     return final_result
 

@@ -13,9 +13,6 @@ from mybot.services.response_service.event_handler import EventHandler
 SUCCEED_HTML_TPL = """
 <b>Prompt</b>: 
 <code>{prompt}</code>
-
-<b>Negative Prompt</b>: 
-<code>{negative_prompt}</code>
 """
 
 DEFAULT_TOOL_CALLING_TITLE = "<blockquote>✨ 工具使用：{node_title}</blockquote>"
@@ -24,8 +21,7 @@ DEFAULT_TOOL_CALLING_TITLE = "<blockquote>✨ 工具使用：{node_title}</block
 def _extract_progress_text_image_qwen_master(structured_output: Dict[str, Any]) -> str | None:
     if structured_output and isinstance(structured_output, dict):
         prompt = structured_output.get("prompt", "")
-        negative_prompt = structured_output.get("negative_prompt", "")
-        return SUCCEED_HTML_TPL.format(prompt=prompt, negative_prompt=negative_prompt)
+        return SUCCEED_HTML_TPL.format(prompt=prompt)
 
 
 async def node_started(

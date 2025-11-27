@@ -5,6 +5,8 @@
 @GitHub  : https://github.com/QIN2DIM
 @Desc    : Imagine command handler for generating images using Dify workflow
 """
+import asyncio
+
 import telegram
 from loguru import logger
 from telegram import ReactionTypeEmoji, Chat, Message
@@ -16,7 +18,11 @@ from dify.models import ForcedCommand
 from models import Interaction, TaskType
 from mybot.services import dify_service, response_service
 from mybot.task_manager import non_blocking_handler
-from mybot.common import should_ignore_command_in_group, process_message_media
+from mybot.common import (
+    should_ignore_command_in_group,
+    add_message_to_media_group_cache,
+    download_media_group_files,
+)
 
 EMOJI_REACTION = [ReactionTypeEmoji(emoji=telegram.constants.ReactionEmoji.FIRE)]
 
@@ -70,6 +76,51 @@ async def _reply_help(
     return True
 
 
+async def _collect_media_group_files(message: Message, bot) -> tuple[dict, bool, list]:
+    """
+    Collect all media files from a message, handling media groups properly.
+
+    When multiple photos are sent with a command, Telegram creates a media group
+    where each photo is a separate message with the same media_group_id.
+    We need to wait for all messages to arrive before processing.
+
+    Args:
+        message: The trigger message (with the command)
+        bot: Bot instance
+
+    Returns:
+        Tuple of (media_files dict, has_media bool, photo_paths list)
+    """
+    # Add current message to cache first
+    add_message_to_media_group_cache(message)
+
+    # If this message is part of a media group, wait for other messages to arrive
+    if message.media_group_id:
+        # Wait for other messages in the group to be received and cached
+        # This delay allows MessageHandler to process and cache the other photos
+        await asyncio.sleep(0.8)
+
+        logger.debug(
+            f"Processing media group {message.media_group_id} for /imagine command"
+        )
+
+    # Now download all media from the group (or single message)
+    media_files = await download_media_group_files(message, bot)
+
+    # Check if any media was downloaded
+    has_media = False
+    if media_files:
+        for media_type, paths in media_files.items():
+            if paths:
+                has_media = True
+                logger.info(f"Downloaded {len(paths)} {media_type} for /imagine processing")
+
+    # For backward compatibility
+    photo_paths = media_files.get("photos", []) if media_files else []
+
+    return media_files, has_media, photo_paths
+
+
 @non_blocking_handler("imagine_command")
 async def imagine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate images using Dify workflow based on user prompts"""
@@ -90,18 +141,19 @@ async def imagine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.warning("imagine 命令：无法找到有效的消息或聊天信息进行回复")
         return
 
-    # Process media files from current message
-    media_files, has_media, photo_paths = await process_message_media(message, context.bot)
+    # Process media files from current message (with media group support)
+    media_files, has_media, photo_paths = await _collect_media_group_files(
+        message, context.bot
+    )
 
     # Also check for media in replied message (if user replied to a message with media)
     if message.reply_to_message:
-        from mybot.common import add_message_to_media_group_cache, download_media_group_files
+        # Handle replied message's media group
+        reply_media_files, reply_has_media, _ = await _collect_media_group_files(
+            message.reply_to_message, context.bot
+        )
 
-        # Add reply message to cache for media group handling
-        add_message_to_media_group_cache(message.reply_to_message)
-        reply_media_files = await download_media_group_files(message.reply_to_message, context.bot)
-
-        if reply_media_files:
+        if reply_has_media and reply_media_files:
             # Merge media files from reply
             if not media_files:
                 media_files = reply_media_files
